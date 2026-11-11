@@ -2,13 +2,13 @@ import { and, desc, eq, gte, ilike, inArray, notInArray, or, sql } from "drizzle
 import { now } from "../clock";
 import { z } from "zod";
 import { longDate } from "@/lib/format";
-import { AUTO, DEFAULT_SETTINGS, type EnvelopeField, type FieldValue, type FileStatus } from "@/lib/types";
+import { AUTO, DEFAULT_SETTINGS, type EnvelopeField, type Field, type FieldValue, type FileStatus, type FirmSigner } from "@/lib/types";
 import { requiredInputs, templateIssues } from "@/lib/validate";
 import { appendEvent } from "../audit";
 import { AppError, defer, type Ctx } from "../context";
 import { decrypt, encrypt, newDocId, newId, randomToken, sha256Hex } from "../crypto";
 import { getDb, type DbOrTx, type Tx } from "../db";
-import { envelopes, events, files, signers, workspaces, type Envelope, type FileRow, type Signer, type Template, type Workspace } from "../db/schema";
+import { envelopes, events, files, signers, templates, workspaces, type Envelope, type FileRow, type Signer, type Template, type Workspace } from "../db/schema";
 import { sendEmail } from "../email";
 import { emitWebhook } from "../webhooks";
 import { resolveTemplate } from "./templates";
@@ -53,6 +53,30 @@ async function nextReference(tx: Tx, workspaceId: string) {
       .limit(1);
     if (!taken.length) return reference;
   }
+}
+
+/**
+ * Fill every automatic field from the file's data and the firm's standing signature.
+ * Shared by sending (the real thing) and the editor's client preview (sample data), so a
+ * preview can never drift from what a client actually receives.
+ */
+export function resolveAutoFields(fields: Field[], known: Record<string, string>, firmSigner: FirmSigner | null | undefined) {
+  let firmSigned = false;
+  const resolved: EnvelopeField[] = fields.map((f) => {
+    if (f.assignee !== AUTO) return f;
+    let value: FieldValue = "";
+    if (f.type === "signature" || f.type === "initials") {
+      if (firmSigner) {
+        value = firmSigner.signature;
+        firmSigned = true;
+      }
+    } else if (f.type === "date") value = known.sent_date ?? "";
+    else if (f.type === "name") value = known.firm_signer_name ?? "";
+    else if (f.type === "checkbox") value = true;
+    else value = (known[f.variable ?? ""] ?? "").trim();
+    return { ...f, value };
+  });
+  return { fields: resolved, firmSigned };
 }
 
 interface SignerSeed {
@@ -101,19 +125,7 @@ async function createEnvelope(
     firm_signer_name: ws.firmSigner?.name ?? "",
     firm_signer_title: ws.firmSigner?.title ?? "",
   };
-  let firmSigned = false;
-  const resolved: EnvelopeField[] = template.fields.map((f) => {
-    if (f.assignee !== AUTO) return f;
-    let value: FieldValue = "";
-    if (f.type === "signature" || f.type === "initials") {
-      value = ws.firmSigner!.signature;
-      firmSigned = true;
-    } else if (f.type === "date") value = known.sent_date;
-    else if (f.type === "name") value = known.firm_signer_name;
-    else if (f.type === "checkbox") value = true;
-    else value = (known[f.variable ?? ""] ?? "").trim();
-    return { ...f, value };
-  });
+  const { fields: resolved, firmSigned } = resolveAutoFields(template.fields, known, ws.firmSigner);
 
   const envelopeId = newId("env");
   const [envelope] = await tx
@@ -196,6 +208,7 @@ async function deliver(
   envelope: Envelope,
   template: Pick<Template, "name" | "emailSubject" | "emailMessage">,
   people: (Signer & { token: string })[],
+  announce = true,
 ) {
   const db = await getDb();
   const settings = settingsOf(ws);
@@ -228,7 +241,7 @@ async function deliver(
       },
     });
   }
-  await emitWebhook(db, ws.id, "agreement.sent", filePayload(file, envelope, people, ctx.baseUrl));
+  if (announce) await emitWebhook(db, ws.id, "agreement.sent", filePayload(file, envelope, people, ctx.baseUrl));
 }
 
 /**
@@ -356,6 +369,110 @@ export async function voidAgreement(ctx: Ctx, envelopeId: string, reason: string
   defer(async () => {
     await emitWebhook(db, ctx.workspaceId, "agreement.voided", filePayload(result.file, result.envelope, result.people, ctx.baseUrl));
   });
+}
+
+const signerPatch = z.object({
+  name: z.string().trim().min(1, "Enter the signer's name.").max(120),
+  email: z.string().trim().toLowerCase().email("Enter a valid email address.").max(200),
+});
+
+/**
+ * Correct a signer's name or email after sending (the everyday typo).
+ *
+ * The old link may already be in the wrong person's inbox, so it is revoked: the signer
+ * gets a fresh link and starts again as "not opened". A printed name can only change while
+ * nobody has signed, because other parties signed the document as it was. The correction
+ * is written to the audit trail with the before and after values.
+ */
+export async function updateSigner(ctx: Ctx, signerId: string, raw: unknown) {
+  const input = signerPatch.parse(raw);
+  const db = await getDb();
+  const result = await db.transaction(async (tx) => {
+    const [found] = await tx
+      .select()
+      .from(signers)
+      .where(and(eq(signers.id, signerId), eq(signers.workspaceId, ctx.workspaceId)))
+      .limit(1);
+    if (!found) throw new AppError("Signer not found.", "not_found", 404);
+    const [envelope] = await tx.select().from(envelopes).where(eq(envelopes.id, found.envelopeId)).for("update");
+    if (envelope.status !== "sent" && envelope.status !== "partially_signed") {
+      throw new AppError("This agreement is no longer out for signature.", "conflict", 409);
+    }
+    const everyone = await tx.select().from(signers).where(eq(signers.envelopeId, envelope.id));
+    const signer = everyone.find((s) => s.id === signerId)!;
+    if (signer.status === "signed" || signer.status === "declined") {
+      throw new AppError("This signer has already responded, so their details can no longer change.", "conflict", 409);
+    }
+    const nameChanged = input.name !== signer.name;
+    const emailChanged = input.email !== signer.email;
+    if (!nameChanged && !emailChanged) throw new AppError("Nothing was changed.", "unchanged", 422);
+    if (nameChanged && everyone.some((s) => s.status === "signed")) {
+      throw new AppError("Someone has already signed this agreement, so names can no longer change. Void it and send a new one.", "conflict", 409);
+    }
+
+    const [ws] = await tx.select().from(workspaces).where(eq(workspaces.id, ctx.workspaceId));
+    const [file] = await tx.select().from(files).where(eq(files.id, envelope.fileId));
+    const [template] = await tx.select().from(templates).where(eq(templates.id, envelope.templateId)).limit(1);
+
+    const token = randomToken(32);
+    const [updated] = await tx
+      .update(signers)
+      .set({
+        name: input.name,
+        email: input.email,
+        tokenHash: sha256Hex(token),
+        tokenEnc: encrypt(token),
+        status: "pending",
+        viewedAt: null,
+        consentedAt: null,
+        ip: null,
+        userAgent: null,
+      })
+      .where(eq(signers.id, signerId))
+      .returning();
+
+    // The file's client is the first signer: their details are printed on the agreement
+    // and shown on the file, so both follow the correction.
+    const isPrimary = signer.name === file.clientName && signer.email === file.clientEmail;
+    let fields = envelope.fields;
+    let fileRow = file;
+    if (isPrimary) {
+      fields = envelope.fields.map((f) =>
+        f.assignee === AUTO && f.type === "text" && f.variable === "client_name"
+          ? { ...f, value: input.name }
+          : f.assignee === AUTO && f.type === "text" && f.variable === "client_email"
+            ? { ...f, value: input.email }
+            : f,
+      );
+      await tx.update(envelopes).set({ fields }).where(eq(envelopes.id, envelope.id));
+      [fileRow] = await tx.update(files).set({ clientName: input.name, clientEmail: input.email, updatedAt: now() }).where(eq(files.id, file.id)).returning();
+    }
+
+    await appendEvent(tx, {
+      workspaceId: ctx.workspaceId,
+      envelopeId: envelope.id,
+      fileId: file.id,
+      type: "agreement.signer_updated",
+      actor: ctx.actor,
+      ip: ctx.ip,
+      userAgent: ctx.userAgent,
+      data: { role: signer.roleLabel, from: { name: signer.name, email: signer.email }, to: { name: input.name, email: input.email }, linkReissued: true },
+    });
+    return { ws, file: fileRow, envelope: { ...envelope, fields }, updated: { ...updated, token }, template };
+  });
+
+  defer(() =>
+    deliver(
+      ctx,
+      result.ws,
+      result.file,
+      result.envelope,
+      { name: result.envelope.templateName, emailSubject: result.template?.emailSubject ?? "", emailMessage: result.template?.emailMessage ?? "" },
+      [result.updated],
+      false,
+    ),
+  );
+  return { url: signingUrl(ctx.baseUrl, result.updated.token) };
 }
 
 /** Nudge everyone who has not signed yet. Used by the reminder schedule and the manual button. */

@@ -4,7 +4,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import QRCode from "qrcode";
-import { RemindButton, ResendButton, VoidButton } from "@/components/file-actions";
+import { EditSignerButton, RemindButton, ResendButton, VoidButton } from "@/components/file-actions";
 import { buttonClass } from "@/components/button-class";
 import { Badge, Card, CopyButton, StatusPill } from "@/components/ui";
 import { EVENT_LABEL, formatDuration } from "@/lib/format";
@@ -217,6 +217,7 @@ export default async function FilePage({ params, searchParams }: { params: Promi
                               <a href={s.url} target="_blank" rel="noreferrer" className={buttonClass("secondary", "sm")}>
                                 <ExternalLink className="size-3.5" /> Sign on this device
                               </a>
+                              <EditSignerButton signerId={s.id} name={s.name} email={s.email} canRename={!current.signers.some((x) => x.status === "signed")} />
                             </div>
                           </div>
                         </div>

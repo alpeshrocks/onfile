@@ -101,4 +101,5 @@ export const EVENT_LABEL: Record<string, string> = {
   "agreement.reminded": "Reminder sent",
   "agreement.firm_signed": "Firm signature applied",
   "agreement.downloaded": "Signed copy downloaded",
+  "agreement.signer_updated": "Signer details corrected, new link issued",
 };

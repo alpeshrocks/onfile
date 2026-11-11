@@ -194,6 +194,15 @@ export async function resendAction(fileId: string) {
   });
 }
 
+export async function updateSignerAction(signerId: string, input: unknown) {
+  return run(async () => {
+    const { ctx } = await requireCtx();
+    await fileService.updateSigner(ctx, signerId, input);
+    revalidatePath("/files");
+    return {};
+  });
+}
+
 // ---- Settings ---------------------------------------------------------------
 
 export async function saveSettingsAction(input: unknown) {
