@@ -1,7 +1,7 @@
 # Submission: Onfile
 
 - **Submission URL:** _add after deploying_
-- **GitHub repository:** _add after pushing_
+- **GitHub repository:** https://github.com/alpeshrocks/onfile
 
 ## 1. What I built
 
