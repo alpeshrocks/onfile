@@ -43,7 +43,7 @@ every outgoing email in the in-app Outbox instead of sending it.
 | Command | What it does |
 | --- | --- |
 | `npm run dev` | Development server |
-| `npm test` | 48 tests: unit, real-PDF detection and stamping, full lifecycle, REST API and webhooks |
+| `npm test` | 57 tests: unit, real-PDF detection and stamping, full lifecycle, signer correction, password reset, REST API and webhooks |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | TypeScript, strict |
 | `npm run build` | Production build |
@@ -90,7 +90,8 @@ every outgoing email in the in-app Outbox instead of sending it.
    by reading the surrounding words. It runs in the browser, so document text never leaves
    the session, and in the test suite against real generated PDFs.
 3. **A person confirms.** The editor shows the proposal, marks low-confidence guesses, and
-   keeps a live checklist of what blocks publishing.
+   keeps a live checklist of what blocks publishing. **Preview as client** walks through the real
+   signing screens with sample data before anything is published; nothing is sent or saved.
 4. **A guaranteed path.** If nothing can be detected (a scan, an agreement with no signature
    line), one click appends a signature page whose fields are already placed.
 
@@ -144,6 +145,11 @@ every outgoing email in the in-app Outbox instead of sending it.
 - Webhooks are HMAC-SHA256 signed with a timestamp, and internal network targets are refused
   in production.
 - Email previews render in a sandboxed iframe; all interpolated email content is escaped.
+- Password reset links are single use, expire in an hour and sign out every other session.
+  The Outbox copy of a reset email has the link removed, because teammates can read the
+  Outbox. With no mail provider configured no link is minted; the owner issues one instead.
+- Correcting a signer's email revokes the link already sent and issues a new one, and the
+  change is written to the audit trail with before and after values.
 
 ## Project layout
 

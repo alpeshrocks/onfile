@@ -55,6 +55,9 @@ is always a path from "any document" to "signable".
   detection got wrong, and must be told plainly what still blocks publishing.
 - **In-browser repair for protected or damaged PDFs.** Why: "your PDF is not supported" is a
   dead end; rebuilding it from rendered pages is not.
+- **Preview as client.** Walk through the real signing screens with sample data before
+  publishing. Nothing is sent or saved. Why: a firm should see exactly what its clients will
+  see before the first real one does.
 
 **Taking the manual work out of every file**
 
@@ -74,6 +77,10 @@ is always a path from "any document" to "signable".
   open a file twice. Idempotent on the firm's own ID, so retries are safe.
 - **More than one signer.** Why: spouses, co-owners and business partners are routine; the
   file clears only when all have signed.
+- **Correct a signer's details after sending.** Fix a mistyped name or email on the file. The
+  link already sent stops working, a new one goes out, and the change is recorded in the
+  audit trail. Why: typos in client emails happen daily, and voiding and reopening a file to
+  fix one is exactly the manual work this product exists to remove.
 
 **A signature a firm can rely on**
 
@@ -94,6 +101,9 @@ is always a path from "any document" to "signable".
 
 - **Multi-tenant workspaces, team invitations, branding, time zone.** Why: the client's stated
   goal is to sell this to other firms; it should not need rebuilding to do so.
+- **Password reset and removing teammates.** Reset by email when delivery is on, or by a
+  one-time link the owner issues. Owners can remove a teammate, which ends their sessions at
+  once. Why: people forget passwords and staff leave; a firm cannot run without both.
 - **Sample workspace in one click.** A private sandbox with realistic history, produced by
   running the real send, open, sign and decline code. Why: a prospect (or a reviewer) should
   be able to judge the product before uploading anything.
@@ -103,7 +113,7 @@ is always a path from "any document" to "signable".
 
 **Engineering that supports the above**
 
-- 48 automated tests, including field detection and PDF stamping checked against real
+- 57 automated tests, including field detection and PDF stamping checked against real
   generated PDFs (rotated pages, offset crop boxes, form fields, two-column signature
   blocks), the full lifecycle against a real Postgres engine, tenant isolation, and the API
   with HMAC-verified webhooks.
