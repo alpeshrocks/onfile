@@ -1,0 +1,167 @@
+@import "tailwindcss";
+
+/*
+ * Onfile visual system.
+ * The product lives in the world of paperwork: file folders, ballpoint ink and the yellow
+ * "sign here" flags stuck on a contract. Those three things are the palette:
+ * cool paper, ink blue for anything you act on, flag yellow only for "a signature goes here".
+ */
+@theme {
+  --color-paper: #f4f6f9;
+  --color-surface: #ffffff;
+  --color-ink: #0e1a2b;
+  --color-ink-2: #33404f;
+  --color-muted: #5b6676;
+  --color-faint: #8a94a3;
+  --color-line: #dce1e8;
+  --color-line-2: #ebeef3;
+  --color-blue: #1b3fd8;
+  --color-blue-dark: #1632ae;
+  --color-blue-50: #eef2ff;
+  --color-blue-100: #dce4ff;
+  --color-flag: #ffd23f;
+  --color-flag-50: #fff6d6;
+  --color-flag-ink: #5c4600;
+  --color-green: #0b7a53;
+  --color-green-50: #e5f5ee;
+  --color-red: #c2332a;
+  --color-red-50: #fcecea;
+  --color-amber: #a35f00;
+  --color-amber-50: #fff1d9;
+  --color-teal: #0e7c86;
+  --color-teal-50: #e0f4f5;
+
+  --font-sans: var(--font-instrument), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
+
+  --shadow-lift: 0 1px 2px rgb(14 26 43 / 0.06), 0 8px 24px -8px rgb(14 26 43 / 0.14);
+  --shadow-pop: 0 2px 4px rgb(14 26 43 / 0.08), 0 24px 48px -12px rgb(14 26 43 / 0.28);
+
+  --animate-rise: rise 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-pulse-ring: pulse-ring 1.6s ease-out infinite;
+  --animate-draw: draw 0.7s 0.15s cubic-bezier(0.65, 0, 0.35, 1) forwards;
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
+  @keyframes pulse-ring {
+    0% {
+      box-shadow: 0 0 0 0 rgb(255 210 63 / 0.75);
+    }
+    100% {
+      box-shadow: 0 0 0 12px rgb(255 210 63 / 0);
+    }
+  }
+  @keyframes draw {
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-blue);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background: var(--color-blue-100);
+  }
+  button,
+  [role="button"],
+  summary,
+  label[for],
+  select {
+    cursor: pointer;
+  }
+  dialog {
+    margin: auto;
+  }
+  dialog::backdrop {
+    background: rgb(14 26 43 / 0.45);
+    backdrop-filter: blur(2px);
+  }
+  dialog[open] {
+    animation: rise 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /* Headings use the narrow end of the type family's width axis: one family, two voices. */
+  .display {
+    font-stretch: 80%;
+    font-variation-settings: "wdth" 80;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    line-height: 1.08;
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+  .mono {
+    font-family: var(--font-mono);
+    font-size: 0.86em;
+    letter-spacing: -0.01em;
+  }
+  /* The tab on top of a file folder. Used where something is literally a file. */
+  .folder-tab {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 14px 0 12px;
+    border: 1px solid var(--color-line);
+    border-bottom: 0;
+    border-radius: 8px 12px 0 0;
+    background: var(--color-surface);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-ink-2);
+    margin-bottom: -1px;
+    z-index: 1;
+  }
+  /* Document pages sit on a desk, so they get the only real shadow in the product. */
+  .sheet {
+    background: #fff;
+    box-shadow:
+      0 0 0 1px rgb(14 26 43 / 0.08),
+      0 2px 4px rgb(14 26 43 / 0.05),
+      0 12px 28px -10px rgb(14 26 43 / 0.18);
+  }
+  .field-text {
+    font-family: Helvetica, Arial, sans-serif;
+    color: #121c33;
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-line) transparent;
+  }
+}
