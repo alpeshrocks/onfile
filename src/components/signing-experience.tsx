@@ -2,8 +2,9 @@
 
 import { Time } from "./time";
 import clsx from "clsx";
-import { ArrowDown, Ban, Check, CircleAlert, Clock, Download, FileText, Lock, PenLine, ShieldCheck } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowDown, Ban, Check, CircleAlert, Clock, Download, Eye, FileText, Lock, PenLine, ShieldCheck } from "lucide-react";
+import Link from "next/link";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { longDate } from "@/lib/format";
 import type { FieldValue, SignatureValue } from "@/lib/types";
@@ -127,18 +128,87 @@ function Done({ view, token, status }: { view: SigningView; token: string; statu
   );
 }
 
-export function SigningExperience({ token, view }: { token: string; view: SigningView }) {
+/**
+ * Preview mode lets a firm walk through exactly what its client will see, using the real
+ * signing screens, before an agreement is published. Nothing is sent, saved or recorded:
+ * every network call the real flow makes is skipped.
+ */
+export interface SigningPreview {
+  documentUrl: string;
+  backHref: string;
+}
+const PreviewContext = createContext<SigningPreview | null>(null);
+
+function PreviewBar({ preview }: { preview: SigningPreview }) {
+  return (
+    <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 bg-ink px-4 py-2 text-center text-[13px] text-white">
+      <span className="inline-flex items-center gap-1.5">
+        <Eye className="size-3.5" /> Preview. This is what your client sees. Nothing is sent or recorded.
+      </span>
+      <Link href={preview.backHref} className="font-semibold underline underline-offset-2">
+        Back to the editor
+      </Link>
+    </div>
+  );
+}
+
+function PreviewDone({ view, preview, onRestart }: { view: SigningView; preview: SigningPreview; onRestart: () => void }) {
+  return (
+    <Shell view={view}>
+      <FirmMark view={view} />
+      <div className="mt-8 grid size-14 place-items-center rounded-full bg-blue-50 text-blue">
+        <Eye className="size-6" />
+      </div>
+      <h1 className="display mt-5 text-[32px]">That is the whole client experience</h1>
+      <p className="mt-3 text-[15px] leading-relaxed text-ink-2">
+        A real client would now see a confirmation and a button to download the signed copy, and the file would be marked cleared to start. Nothing was sent or signed in this preview.
+      </p>
+      <div className="mt-7 flex flex-wrap gap-2">
+        <Link href={preview.backHref} className={buttonClass("primary", "lg")}>
+          Back to the editor
+        </Link>
+        <Button variant="secondary" size="lg" onClick={onRestart}>
+          Preview again
+        </Button>
+      </div>
+    </Shell>
+  );
+}
+
+export function SigningExperience({ token, view, preview }: { token: string; view: SigningView; preview?: SigningPreview }) {
   const [phase, setPhase] = useState<Phase>(view.signer.consented ? "sign" : "intro");
-  const [finished, setFinished] = useState<"completed" | "waiting" | null>(null);
+  const [finished, setFinished] = useState<"completed" | "waiting" | "preview" | null>(null);
   const [declined, setDeclined] = useState(false);
 
   useEffect(() => {
-    if (view.state === "sign") void post(token, "view").catch(() => {});
-  }, [token, view.state]);
+    if (view.state === "sign" && !preview) void post(token, "view").catch(() => {});
+  }, [token, view.state, preview]);
+
+  if (preview) {
+    return (
+      <PreviewContext.Provider value={preview}>
+        <PreviewBar preview={preview} />
+        {finished ? (
+          <PreviewDone
+            view={view}
+            preview={preview}
+            onRestart={() => {
+              setFinished(null);
+              setPhase("intro");
+            }}
+          />
+        ) : phase === "intro" ? (
+          <Intro view={view} token={token} onContinue={() => setPhase("sign")} onDeclined={() => {}} />
+        ) : (
+          <Signing view={view} token={token} onFinished={setFinished} onDeclined={() => {}} />
+        )}
+      </PreviewContext.Provider>
+    );
+  }
 
   if (declined) return <Terminal view={{ ...view, state: "declined" }} token={token} />;
   if (view.state !== "sign") return <Terminal view={view} token={token} />;
-  if (finished) return <Done view={view} token={token} status={finished} />;
+  if (finished && finished !== "preview") return <Done view={view} token={token} status={finished} />;
   if (phase === "intro") return <Intro view={view} token={token} onContinue={() => setPhase("sign")} onDeclined={() => setDeclined(true)} />;
   return <Signing view={view} token={token} onFinished={setFinished} onDeclined={() => setDeclined(true)} />;
 }
@@ -183,6 +253,7 @@ function DeclineDialog({ open, onClose, token, firm, onDeclined }: { open: boole
 }
 
 function Intro({ view, token, onContinue, onDeclined }: { view: SigningView; token: string; onContinue: () => void; onDeclined: () => void }) {
+  const preview = useContext(PreviewContext);
   const [agreed, setAgreed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [declining, setDeclining] = useState(false);
@@ -240,7 +311,7 @@ function Intro({ view, token, onContinue, onDeclined }: { view: SigningView; tok
         onClick={async () => {
           setBusy(true);
           try {
-            await post(token, "consent");
+            if (!preview) await post(token, "consent");
             onContinue();
           } catch (err) {
             toast.error((err as Error).message);
@@ -250,16 +321,20 @@ function Intro({ view, token, onContinue, onDeclined }: { view: SigningView; tok
       >
         Review agreement
       </Button>
-      <button type="button" onClick={() => setDeclining(true)} className="mx-auto mt-4 text-sm text-muted underline-offset-4 hover:text-ink hover:underline">
-        I do not want to sign
-      </button>
+      {!preview && (
+        <button type="button" onClick={() => setDeclining(true)} className="mx-auto mt-4 text-sm text-muted underline-offset-4 hover:text-ink hover:underline">
+          I do not want to sign
+        </button>
+      )}
       <DeclineDialog open={declining} onClose={() => setDeclining(false)} token={token} firm={view.firm.name} onDeclined={onDeclined} />
     </Shell>
   );
 }
 
-function Signing({ view, token, onFinished, onDeclined }: { view: SigningView; token: string; onFinished: (s: "completed" | "waiting") => void; onDeclined: () => void }) {
-  const { doc, error } = usePdf(`/api/sign/${token}/document`);
+function Signing({ view, token, onFinished, onDeclined }: { view: SigningView; token: string; onFinished: (s: "completed" | "waiting" | "preview") => void; onDeclined: () => void }) {
+  const preview = useContext(PreviewContext);
+  const documentUrl = preview ? preview.documentUrl : `/api/sign/${token}/document`;
+  const { doc, error } = usePdf(documentUrl);
   const mine = useMemo(() => view.fields.filter((f) => f.mine).sort(byPosition), [view.fields]);
   const [values, setValues] = useState<Record<string, FieldValue>>(() => {
     const init: Record<string, FieldValue> = {};
@@ -325,6 +400,7 @@ function Signing({ view, token, onFinished, onDeclined }: { view: SigningView; t
   const submit = async () => {
     setBusy(true);
     try {
+      if (preview) return void onFinished("preview");
       const r = await post(token, "submit", { consent: true, values, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
       onFinished(r.status);
     } catch (err) {
@@ -349,12 +425,14 @@ function Signing({ view, token, onFinished, onDeclined }: { view: SigningView; t
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            <a href={`/api/sign/${token}/document`} target="_blank" rel="noreferrer" className={buttonClass("ghost", "sm", "max-sm:hidden")}>
+            <a href={documentUrl} target="_blank" rel="noreferrer" className={buttonClass("ghost", "sm", "max-sm:hidden")}>
               <Download className="size-3.5" /> Original
             </a>
-            <Button variant="ghost" size="sm" onClick={() => setDeclining(true)}>
-              Decline
-            </Button>
+            {!preview && (
+              <Button variant="ghost" size="sm" onClick={() => setDeclining(true)}>
+                Decline
+              </Button>
+            )}
           </div>
         </div>
       </header>

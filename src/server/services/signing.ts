@@ -6,14 +6,15 @@ import { AUTO, DEFAULT_SETTINGS, signatureValueSchema, type EnvelopeField, type 
 import { appendEvent, envelopeEvents, verifyChain } from "../audit";
 import { getBlob, putBlob } from "../blobs";
 import { now } from "../clock";
-import { AppError, defer, envBaseUrl } from "../context";
+import { AppError, defer, envBaseUrl, type Ctx } from "../context";
 import { decrypt, sha256Hex } from "../crypto";
 import { getDb, type DbOrTx, type Tx } from "../db";
 import { envelopes, files, signers, workspaces, type Envelope, type FileRow, type Signer, type Workspace } from "../db/schema";
 import { sendEmail } from "../email";
 import { finalizePdf } from "../pdf/finalize";
 import { emitWebhook } from "../webhooks";
-import { filePayload, signingUrl } from "./files";
+import { filePayload, resolveAutoFields, signingUrl } from "./files";
+import { getTemplate } from "./templates";
 
 export interface RequestMeta {
   ip?: string | null;
@@ -81,6 +82,41 @@ export async function getSigningView(token: string) {
   };
 }
 export type SigningView = NonNullable<Awaited<ReturnType<typeof getSigningView>>>;
+
+/**
+ * The view a client would get for a template, built from sample data and written nowhere.
+ * It goes through the same automatic-field resolver as a real send.
+ */
+export async function getPreviewView(ctx: Ctx, templateId: string): Promise<SigningView | null> {
+  const db = await getDb();
+  const template = await getTemplate(db, ctx.workspaceId, templateId);
+  if (!template || template.status === "archived") return null;
+  const [workspace] = await db.select().from(workspaces).where(eq(workspaces.id, ctx.workspaceId)).limit(1);
+  const role = template.roles[0] ?? { key: "client", label: "Client" };
+  const sample = { name: "Sample Client", email: "client@example.com" };
+  const known: Record<string, string> = {
+    ...Object.fromEntries(template.variables.map((v) => [v.key, `[${v.label}]`])),
+    client_name: sample.name,
+    client_email: sample.email,
+    file_reference: "F-0000",
+    file_title: "Sample file",
+    sent_date: longDate(now(), { ...DEFAULT_SETTINGS, ...workspace.settings }.timeZone),
+    firm_name: workspace.name,
+    firm_signer_name: workspace.firmSigner?.name ?? "",
+    firm_signer_title: workspace.firmSigner?.title ?? "",
+  };
+  const { fields } = resolveAutoFields(template.fields, known, workspace.firmSigner);
+  return {
+    state: "sign",
+    firm: { name: workspace.name, brandColor: workspace.brandColor },
+    file: { reference: "F-0000", title: "Sample file" },
+    agreement: { name: template.name, docId: "PREVIEW", pages: template.pages, sentAt: now().toISOString(), completedAt: null },
+    signer: { name: sample.name, email: sample.email, roleLabel: role.label, consented: false },
+    others: template.roles.slice(1).map((r) => ({ name: r.label, roleLabel: r.label, signed: false })),
+    declineReason: null,
+    fields: fields.map((f) => ({ ...f, mine: f.assignee === role.key })),
+  };
+}
 
 export async function signingDocument(token: string, which: "source" | "signed") {
   const db = await getDb();

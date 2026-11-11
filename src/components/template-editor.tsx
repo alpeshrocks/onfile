@@ -9,6 +9,7 @@ import {
   CircleAlert,
   CircleCheck,
   Copy,
+  Eye,
   FilePlus2,
   Fingerprint,
   PenLine,
@@ -30,6 +31,7 @@ import { slugKey } from "@/lib/format";
 import { clampRect } from "@/lib/geometry";
 import { AUTO, BUILTIN_VARIABLES, type Field, type FieldType, type FirmSigner, type PageSize, type Role, type Variable } from "@/lib/types";
 import { templateIssues } from "@/lib/validate";
+import { buttonClass } from "./button-class";
 import { TYPE_LABEL, fieldBox } from "./fields";
 import { FirmSignerDialog } from "./firm-signer";
 import { PdfPage, extractForDetection, usePdf } from "./pdf";
@@ -356,7 +358,22 @@ export function TemplateEditor({ template, firmName, firmSigner: initialFirmSign
         <span className="ml-auto text-[13px] text-muted max-md:hidden" aria-live="polite">
           {saveState === "saving" ? "Saving" : saveState === "error" ? "Not saved" : saveState === "dirty" ? (isLive ? "Unsaved changes" : "Saving") : isLive ? "" : "Draft saved"}
         </span>
-        <Button onClick={publish} loading={busy === "publish"} disabled={isLive && saveState !== "dirty"} className="max-md:ml-auto">
+        <a
+          href={`/agreements/${template.id}/preview`}
+          target="_blank"
+          rel="noreferrer"
+          onClick={(e) => {
+            // The preview shows the saved agreement, so wait for edits to be stored first.
+            if (saveState === "dirty" || saveState === "saving") {
+              e.preventDefault();
+              toast.message(isLive ? "Save your changes first, then preview." : "Saving your changes. Try again in a moment.");
+            }
+          }}
+          className={buttonClass("secondary", "md", "max-md:ml-auto")}
+        >
+          <Eye className="size-4" /> <span className="max-sm:hidden">Preview as client</span>
+        </a>
+        <Button onClick={publish} loading={busy === "publish"} disabled={isLive && saveState !== "dirty"}>
           {isLive ? "Save changes" : "Publish"}
         </Button>
       </header>
