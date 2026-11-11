@@ -229,7 +229,7 @@ export function SignatureDialog({
       ) : (
         <div className="space-y-3">
           <Input value={text} onChange={(e) => setText(e.target.value)} maxLength={mode === "initials" ? 6 : 80} placeholder={mode === "initials" ? "Your initials" : "Your full name"} autoFocus aria-label="Name to sign with" />
-          <div className="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Signature style">
+          <div className="grid gap-2" role="radiogroup" aria-label="Signature style">
             {SIGNATURE_FACES.map((f) => (
               <button
                 key={f.id}
@@ -238,14 +238,15 @@ export function SignatureDialog({
                 aria-checked={face === f.id}
                 onClick={() => setFace(f.id)}
                 className={clsx(
-                  "flex h-24 flex-col items-center justify-center overflow-hidden rounded-xl border px-3 transition-colors",
+                  "flex h-[68px] items-center justify-between gap-4 overflow-hidden rounded-xl border px-4 text-left transition-colors",
                   face === f.id ? "border-blue bg-blue-50 ring-2 ring-blue/20" : "border-line bg-surface hover:border-faint",
                 )}
               >
-                <span className={clsx(f.className, "block max-w-full truncate leading-none text-[#121c33]")} style={{ fontSize: 30 * f.scale }}>
+                {/* One style per row: the whole name stays visible at any dialog width. */}
+                <span className={clsx(f.className, "min-w-0 flex-1 truncate leading-none text-[#121c33]")} style={{ fontSize: 28 * f.scale, paddingBlock: 8 }}>
                   {text.trim() || (mode === "initials" ? "AB" : "Your name")}
                 </span>
-                <span className="mt-2 text-[11px] font-semibold text-muted">{f.label}</span>
+                <span className="shrink-0 text-[11px] font-semibold text-muted">{f.label}</span>
               </button>
             ))}
           </div>
