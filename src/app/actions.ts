@@ -230,6 +230,38 @@ export async function createInviteAction() {
   });
 }
 
+export async function removeMemberAction(userId: string) {
+  return run(async () => {
+    const { ctx, user } = await requireCtx();
+    await accounts.removeMember(ctx, user.role, userId);
+    revalidatePath("/settings");
+    return {};
+  });
+}
+
+export async function createResetLinkAction(userId: string) {
+  return run(async () => {
+    const { ctx, user } = await requireCtx();
+    return { url: await accounts.createResetLink(ctx, user.role, userId) };
+  });
+}
+
+export async function forgotPasswordAction(email: unknown) {
+  return run(async () => {
+    const meta = await limit("forgot", 5, 600);
+    return accounts.requestPasswordReset(email, meta.baseUrl);
+  });
+}
+
+export async function resetPasswordAction(token: string, input: unknown) {
+  return run(async () => {
+    await limit("reset", 10, 600);
+    const session = await accounts.resetPassword(token, input);
+    await setSessionCookie(session.token);
+    return {};
+  });
+}
+
 export async function createApiKeyAction(name: string) {
   return run(async () => {
     const { ctx } = await requireCtx();

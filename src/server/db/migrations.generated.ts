@@ -54,5 +54,12 @@ export const migrations: { id: string; statements: string[] }[] = [
       "CREATE INDEX \"users_workspace_idx\" ON \"users\" USING btree (\"workspace_id\");",
       "CREATE INDEX \"deliveries_webhook_idx\" ON \"webhook_deliveries\" USING btree (\"webhook_id\",\"created_at\");"
     ]
+  },
+  {
+    "id": "0001_faulty_peter_parker",
+    "statements": [
+      "CREATE TABLE \"password_resets\" (\n\t\"id\" text PRIMARY KEY NOT NULL,\n\t\"user_id\" text NOT NULL,\n\t\"token_hash\" text NOT NULL,\n\t\"expires_at\" timestamp with time zone NOT NULL,\n\t\"used_at\" timestamp with time zone,\n\t\"created_at\" timestamp with time zone DEFAULT now() NOT NULL,\n\tCONSTRAINT \"password_resets_token_hash_unique\" UNIQUE(\"token_hash\")\n);",
+      "ALTER TABLE \"password_resets\" ADD CONSTRAINT \"password_resets_user_id_users_id_fk\" FOREIGN KEY (\"user_id\") REFERENCES \"public\".\"users\"(\"id\") ON DELETE cascade ON UPDATE no action;"
+    ]
   }
 ];

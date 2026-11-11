@@ -73,6 +73,16 @@ export const invites = pgTable("invites", {
   createdAt: createdAt(),
 });
 
+export const passwordResets = pgTable("password_resets", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  /** SHA-256 of the token in the link. Single use, short lived. */
+  tokenHash: text("token_hash").notNull().unique(),
+  expiresAt: ts("expires_at").notNull(),
+  usedAt: ts("used_at"),
+  createdAt: createdAt(),
+});
+
 export const blobs = pgTable(
   "blobs",
   {

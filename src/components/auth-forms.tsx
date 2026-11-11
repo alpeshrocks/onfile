@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
-import { demoAction, joinAction, loginAction, signupAction } from "@/app/actions";
+import { demoAction, forgotPasswordAction, joinAction, loginAction, resetPasswordAction, signupAction } from "@/app/actions";
 import { Button, Field, Input } from "./ui";
 
 const zone = () => {
@@ -96,6 +96,11 @@ export function LoginForm() {
       <Field label="Password">
         <Input required type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
       </Field>
+      <p className="-mt-2 text-right text-[13px]">
+        <Link href="/forgot" className="font-semibold text-blue hover:underline">
+          Forgot your password?
+        </Link>
+      </p>
       {error && (
         <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red">
           {error}
@@ -169,5 +174,84 @@ export function DemoButton({ variant = "secondary", size = "lg", className, chil
     >
       {children ?? "Explore a sample workspace"}
     </Button>
+  );
+}
+
+export function ForgotForm() {
+  const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [sent, setSent] = useState<{ delivery: boolean } | null>(null);
+
+  if (sent) {
+    return sent.delivery ? (
+      <div className="rounded-xl border border-line bg-surface p-5 text-[15px] text-ink-2">
+        <p className="font-semibold text-ink">Check your inbox</p>
+        <p className="mt-1">If an account exists for {email}, a link to choose a new password is on its way. It works once and expires in an hour.</p>
+      </div>
+    ) : (
+      <div className="rounded-xl border border-amber/30 bg-amber-50 p-5 text-[15px] text-ink-2">
+        <p className="font-semibold text-ink">Email is not set up on this deployment</p>
+        <p className="mt-1">A reset link cannot be emailed here. Ask your workspace owner to create one for you under Settings, Team, and they can pass it to you directly.</p>
+      </div>
+    );
+  }
+
+  return (
+    <form
+      className="space-y-4"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setBusy(true);
+        setError("");
+        const r = await forgotPasswordAction(email);
+        setBusy(false);
+        if (!r.ok) return void setError(r.error);
+        setSent({ delivery: r.delivery });
+      }}
+    >
+      <Field label="Email">
+        <Input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" autoFocus />
+      </Field>
+      {error && (
+        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red">
+          {error}
+        </p>
+      )}
+      <Button type="submit" size="lg" className="w-full" loading={busy}>
+        Send reset link
+      </Button>
+      <p className="text-center text-sm text-muted">
+        <Link href="/login" className="font-semibold text-blue hover:underline">
+          Back to sign in
+        </Link>
+      </p>
+    </form>
+  );
+}
+
+export function ResetForm({ token }: { token: string }) {
+  const { busy, error, submit } = useSubmit();
+  const [password, setPassword] = useState("");
+  return (
+    <form
+      className="space-y-4"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void submit(() => resetPasswordAction(token, { password }));
+      }}
+    >
+      <Field label="New password" hint="At least 8 characters.">
+        <Input required type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" minLength={8} maxLength={200} autoFocus />
+      </Field>
+      {error && (
+        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red">
+          {error}
+        </p>
+      )}
+      <Button type="submit" size="lg" className="w-full" loading={busy}>
+        Save and sign in
+      </Button>
+    </form>
   );
 }

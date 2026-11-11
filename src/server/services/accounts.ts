@@ -5,7 +5,8 @@ import { DEFAULT_SETTINGS, signatureValueSchema, type WorkspaceSettings } from "
 import { AppError, type Ctx } from "../context";
 import { decrypt, encrypt, hashPassword, newId, randomToken, sha256Hex, verifyPassword } from "../crypto";
 import { getDb } from "../db";
-import { apiKeys, invites, sessions, users, webhookDeliveries, webhooks, workspaces } from "../db/schema";
+import { apiKeys, invites, passwordResets, sessions, users, webhookDeliveries, webhooks, workspaces } from "../db/schema";
+import { emailConfigured, sendEmail } from "../email";
 import { isSafeWebhookUrl } from "../webhooks";
 
 export const SESSION_DAYS = 30;
@@ -175,6 +176,111 @@ export async function acceptInvite(token: string, raw: unknown) {
     await tx.update(invites).set({ acceptedAt: new Date() }).where(eq(invites.id, found.invite.id));
   });
   return { token: await startSession(userId) };
+}
+
+/** Remove a teammate. Their sessions end immediately; files they opened stay. */
+export async function removeMember(ctx: Ctx, actorRole: string, userId: string) {
+  if (actorRole !== "owner") throw new AppError("Only the workspace owner can remove teammates.", "forbidden", 403);
+  if (userId === ctx.userId) throw new AppError("You cannot remove yourself.", "conflict", 409);
+  const db = await getDb();
+  const removed = await db
+    .delete(users)
+    .where(and(eq(users.id, userId), eq(users.workspaceId, ctx.workspaceId)))
+    .returning({ id: users.id });
+  if (!removed.length) throw new AppError("Teammate not found.", "not_found", 404);
+}
+
+// ---- Password reset ---------------------------------------------------------
+
+const RESET_MINUTES = 60;
+
+async function mintReset(userId: string) {
+  const db = await getDb();
+  const token = randomToken(32);
+  await db.insert(passwordResets).values({ id: newId("rst"), userId, tokenHash: sha256Hex(token), expiresAt: new Date(Date.now() + RESET_MINUTES * 60_000) });
+  return token;
+}
+
+/**
+ * "Forgot password". Always answers the same way whether or not the address has an
+ * account. With no mail provider configured nothing is minted, because a link that cannot
+ * be delivered privately should not exist; the owner can issue one instead.
+ */
+export async function requestPasswordReset(rawEmail: unknown, baseUrl: string) {
+  const address = email.parse(rawEmail);
+  if (!emailConfigured()) return { delivery: false };
+  const db = await getDb();
+  const [row] = await db
+    .select({ user: users, workspace: workspaces })
+    .from(users)
+    .innerJoin(workspaces, eq(workspaces.id, users.workspaceId))
+    .where(eq(users.email, address))
+    .limit(1);
+  if (row) {
+    const token = await mintReset(row.user.id);
+    await sendEmail(db, {
+      workspaceId: row.workspace.id,
+      kind: "password_reset",
+      to: row.user.email,
+      toName: row.user.name,
+      fromName: "Onfile",
+      subject: "Reset your Onfile password",
+      private: true,
+      content: {
+        firmName: row.workspace.name,
+        brandColor: row.workspace.brandColor,
+        heading: "Reset your password",
+        paragraphs: [`Hello ${row.user.name.split(" ")[0]},`, `Use the button below to choose a new password. The link works once and expires in ${RESET_MINUTES} minutes. If you did not ask for this, you can ignore this message.`],
+        cta: { label: "Choose a new password", url: `${baseUrl}/reset/${token}` },
+      },
+    });
+  }
+  return { delivery: true };
+}
+
+/** An owner issues a one-time reset link for a teammate, to hand over directly. */
+export async function createResetLink(ctx: Ctx, actorRole: string, userId: string) {
+  if (actorRole !== "owner") throw new AppError("Only the workspace owner can issue reset links.", "forbidden", 403);
+  const db = await getDb();
+  const [member] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(and(eq(users.id, userId), eq(users.workspaceId, ctx.workspaceId)))
+    .limit(1);
+  if (!member) throw new AppError("Teammate not found.", "not_found", 404);
+  return `${ctx.baseUrl}/reset/${await mintReset(member.id)}`;
+}
+
+export async function findReset(token: string) {
+  if (!/^[A-Za-z0-9_-]{20,100}$/.test(token)) return null;
+  const db = await getDb();
+  const [row] = await db
+    .select({ reset: passwordResets, name: users.name })
+    .from(passwordResets)
+    .innerJoin(users, eq(users.id, passwordResets.userId))
+    .where(and(eq(passwordResets.tokenHash, sha256Hex(token)), isNull(passwordResets.usedAt), gt(passwordResets.expiresAt, new Date())))
+    .limit(1);
+  return row ?? null;
+}
+
+/** Set a new password. The link is spent and every existing session is signed out. */
+export async function resetPassword(token: string, raw: unknown) {
+  const input = z.object({ password }).parse(raw);
+  const found = await findReset(token);
+  if (!found) throw new AppError("This reset link has expired or was already used.", "reset_invalid", 410);
+  const passwordHash = await hashPassword(input.password);
+  const db = await getDb();
+  await db.transaction(async (tx) => {
+    const spent = await tx
+      .update(passwordResets)
+      .set({ usedAt: new Date() })
+      .where(and(eq(passwordResets.id, found.reset.id), isNull(passwordResets.usedAt)))
+      .returning({ id: passwordResets.id });
+    if (!spent.length) throw new AppError("This reset link has expired or was already used.", "reset_invalid", 410);
+    await tx.update(users).set({ passwordHash }).where(eq(users.id, found.reset.userId));
+    await tx.delete(sessions).where(eq(sessions.userId, found.reset.userId));
+  });
+  return { token: await startSession(found.reset.userId) };
 }
 
 // ---- API keys ---------------------------------------------------------------

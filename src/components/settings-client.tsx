@@ -4,7 +4,7 @@ import { PenLine, Play, UserPlus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
-import { createInviteAction, runAutomationAction, saveSettingsAction } from "@/app/actions";
+import { createInviteAction, createResetLinkAction, removeMemberAction, runAutomationAction, saveSettingsAction } from "@/app/actions";
 import type { FirmSigner, WorkspaceSettings } from "@/lib/types";
 import { FirmSignerDialog } from "./firm-signer";
 import { SignatureView } from "./signature";
@@ -139,23 +139,64 @@ export function FirmSignerCard({ firmName, current }: { firmName: string; curren
   );
 }
 
-export function TeamCard({ members }: { members: { id: string; name: string; email: string; role: string }[] }) {
+export function TeamCard({ members, currentUserId, isOwner }: { members: { id: string; name: string; email: string; role: string }[]; currentUserId: string; isOwner: boolean }) {
+  const router = useRouter();
   const [url, setUrl] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [reset, setReset] = useState<{ name: string; url: string } | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const remove = async (m: { id: string; name: string }) => {
+    if (!window.confirm(`Remove ${m.name}? They are signed out immediately and can no longer open this workspace. Files they opened stay.`)) return;
+    setBusy(`remove:${m.id}`);
+    const r = await removeMemberAction(m.id);
+    setBusy(null);
+    if (!r.ok) return void toast.error(r.error);
+    toast.success(`${m.name} was removed`);
+    router.refresh();
+  };
+  const resetLink = async (m: { id: string; name: string }) => {
+    setBusy(`reset:${m.id}`);
+    const r = await createResetLinkAction(m.id);
+    setBusy(null);
+    if (!r.ok) return void toast.error(r.error);
+    setReset({ name: m.name, url: r.url });
+  };
+
   return (
     <Card className="p-5 sm:p-6">
       <h2 className="text-[15px] font-semibold">Team</h2>
-      <p className="mt-0.5 text-sm text-muted">Everyone on the team can open files and see every agreement.</p>
+      <p className="mt-0.5 text-sm text-muted">Everyone on the team can open files and see every agreement. The owner manages who has access.</p>
       <ul className="mt-4 divide-y divide-line-2">
         {members.map((m) => (
-          <li key={m.id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
+          <li key={m.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2.5 text-sm">
             <span className="min-w-0">
               <span className="font-semibold">{m.name}</span> <span className="text-muted">{m.email}</span>
             </span>
-            <span className="text-[13px] text-muted">{m.role === "owner" ? "Owner" : "Member"}</span>
+            <span className="flex items-center gap-1">
+              <span className="mr-1 text-[13px] text-muted">{m.role === "owner" ? "Owner" : "Member"}{m.id === currentUserId ? " (you)" : ""}</span>
+              {isOwner && m.id !== currentUserId && (
+                <>
+                  <Button size="sm" variant="ghost" loading={busy === `reset:${m.id}`} onClick={() => resetLink(m)}>
+                    Reset link
+                  </Button>
+                  <Button size="sm" variant="ghost" loading={busy === `remove:${m.id}`} onClick={() => remove(m)}>
+                    Remove
+                  </Button>
+                </>
+              )}
+            </span>
           </li>
         ))}
       </ul>
+      {reset && (
+        <div className="mt-4 rounded-lg bg-paper p-3">
+          <p className="text-[13px] font-semibold text-ink-2">Password reset link for {reset.name}. Works once, for one hour. Pass it to them directly.</p>
+          <div className="mt-1.5 flex items-center gap-2">
+            <code className="mono min-w-0 flex-1 truncate">{reset.url}</code>
+            <CopyButton value={reset.url} />
+          </div>
+        </div>
+      )}
       {url ? (
         <div className="mt-4 rounded-lg bg-paper p-3">
           <p className="text-[13px] font-semibold text-ink-2">Invitation link, valid for one person for 7 days</p>
@@ -168,11 +209,11 @@ export function TeamCard({ members }: { members: { id: string; name: string; ema
         <Button
           variant="secondary"
           className="mt-4"
-          loading={busy}
+          loading={busy === "invite"}
           onClick={async () => {
-            setBusy(true);
+            setBusy("invite");
             const r = await createInviteAction();
-            setBusy(false);
+            setBusy(null);
             if (!r.ok) return void toast.error(r.error);
             setUrl(r.url);
           }}

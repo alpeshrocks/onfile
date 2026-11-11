@@ -67,6 +67,13 @@ export interface OutgoingEmail {
   replyTo?: string;
   fromName: string;
   content: EmailContent;
+  /**
+   * The message carries a secret meant for one person (a password reset link). It is
+   * delivered in full but the Outbox copy, which every teammate can read, has the link
+   * removed. If no provider is configured the secret would reach nobody, so callers
+   * should not send private messages in that case.
+   */
+  private?: boolean;
 }
 
 export async function sendEmail(db: DbOrTx, msg: OutgoingEmail) {
@@ -106,6 +113,9 @@ export async function sendEmail(db: DbOrTx, msg: OutgoingEmail) {
     }
   }
 
+  const stored = msg.private
+    ? renderEmail({ ...msg.content, cta: undefined, footnote: "The private link in this message is not kept in the Outbox." })
+    : html;
   await db.insert(emails).values({
     id,
     workspaceId: msg.workspaceId,
@@ -115,7 +125,7 @@ export async function sendEmail(db: DbOrTx, msg: OutgoingEmail) {
     toEmail: msg.to,
     toName: msg.toName ?? "",
     subject: msg.subject,
-    html,
+    html: stored,
     status,
     error,
     providerId,

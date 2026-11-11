@@ -8,6 +8,13 @@
       "when": 1794428400346,
       "tag": "0000_third_red_ghost",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1794440010668,
+      "tag": "0001_faulty_peter_parker",
+      "breakpoints": true
     }
   ]
 }

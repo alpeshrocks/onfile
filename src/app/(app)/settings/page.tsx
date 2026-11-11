@@ -8,7 +8,7 @@ import { getWorkspace, listMembers } from "@/server/services/accounts";
 export const metadata: Metadata = { title: "Settings" };
 
 export default async function SettingsPage() {
-  const { ctx } = await requireCtx();
+  const { ctx, user } = await requireCtx();
   const [workspace, members] = await Promise.all([getWorkspace(ctx), listMembers(ctx)]);
   return (
     <>
@@ -17,7 +17,7 @@ export default async function SettingsPage() {
         <SettingsForm name={workspace.name} brandColor={workspace.brandColor} settings={{ ...DEFAULT_SETTINGS, ...workspace.settings }} />
         <div className="space-y-6">
           <FirmSignerCard firmName={workspace.name} current={workspace.firmSigner ?? null} />
-          <TeamCard members={members} />
+          <TeamCard members={members} currentUserId={user.id} isOwner={user.role === "owner"} />
           <AutomationCard />
         </div>
       </div>
