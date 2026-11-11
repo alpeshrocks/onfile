@@ -1,0 +1,13 @@
+node_modules
+.next
+.data
+.env
+.env.local
+.env*.local
+.vercel
+*.tsbuildinfo
+next-env.d.ts
+public/pdf.worker.min.mjs
+.DS_Store
+coverage
+.claude
