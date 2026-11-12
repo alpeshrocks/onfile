@@ -9,6 +9,11 @@ const FORMAT = { ago: timeAgo, datetime: formatDateTime, date: formatDate } as c
  * A timestamp in the viewer's own time zone. The server cannot know that zone, so it
  * renders its best guess and the browser corrects it on mount; the mismatch is expected
  * and suppressed here, in one place, instead of leaking hydration warnings everywhere.
+ *
+ * The key matters. With the warning suppressed React keeps the server's text in the page
+ * while believing it rendered the browser's, so setting state to that same browser text
+ * changes nothing and the server's zone stays on screen. Changing the key on mount makes
+ * React replace the element, which puts the viewer's time in the page.
  */
 export function Time({ value, mode = "datetime" }: { value: Date | string | null | undefined; mode?: keyof typeof FORMAT }) {
   const iso = value ? (typeof value === "string" ? value : value.toISOString()) : "";
@@ -23,7 +28,7 @@ export function Time({ value, mode = "datetime" }: { value: Date | string | null
   }, [iso, mode]);
   if (!iso) return null;
   return (
-    <time dateTime={iso} title={mode === "ago" ? formatDateTime(iso) : undefined} suppressHydrationWarning>
+    <time key={text === null ? "server" : "viewer"} dateTime={iso} title={mode === "ago" ? formatDateTime(iso) : undefined} suppressHydrationWarning>
       {text ?? FORMAT[mode](iso)}
     </time>
   );
